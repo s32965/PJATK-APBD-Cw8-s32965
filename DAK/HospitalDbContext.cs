@@ -5,9 +5,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Cw8.DAK;
 
-public partial class UniversityTasksDbContext : DbContext
+public partial class HospitalDbContext : DbContext
 {
-    public UniversityTasksDbContext(DbContextOptions<UniversityTasksDbContext> options)
+    public HospitalDbContext(DbContextOptions<HospitalDbContext> options)
         : base(options)
     {
     }
