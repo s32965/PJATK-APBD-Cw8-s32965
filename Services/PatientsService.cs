@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Cw8.DAK;
 using Cw8.Models;
 using Cw8.DTOs;
+using Cw8.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Cw8.Services;
@@ -53,5 +54,53 @@ public class PatientsService(HospitalDbContext ctx) : IPatientsService
                 )
             ))
         )).ToListAsync(cancellationToken);
+    }
+
+    public async Task<BedAssignmentResponse> AddAsync(string pesel, CreateBedAssignmentRequest request, CancellationToken cancellationToken)
+    {
+        var patientExists = await ctx.Patients.AnyAsync(p => p.Pesel == pesel, cancellationToken);
+        if (!patientExists) 
+            throw new PatientNotFoundException("Patient not found.");
+        
+        var ward = await ctx.Wards.FirstOrDefaultAsync(w => w.Name == request.Ward, cancellationToken);
+        if (ward == null) 
+            throw new WardNotFoundException("Ward not found.");
+        
+        var bedType = await ctx.BedTypes.FirstOrDefaultAsync(bt => bt.Name == request.BedType, cancellationToken);
+        if (bedType == null) 
+            throw new BedTypeNotFoundException("BedType not found.");
+        
+        var availableBed = await ctx.Beds
+            .Where(b => b.Room.WardId == ward.Id && b.BedTypeId == bedType.Id)
+            .Where(b => !b.BedAssignments.Any(ba =>
+                // Logika sprawdzania, czy rezerwacje się na siebie NIE nakładają.
+                (!request.to.HasValue || ba.From < request.to) &&
+                (!ba.To.HasValue || ba.To > request.From)
+            ))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (availableBed == null)
+            throw new BedNotAvailableException("Bed not available in given time.");
+        
+        var bedAssignment = new BedAssignment
+        {
+            PatientPesel = pesel,
+            BedId = availableBed.Id,
+            From = request.From,
+            To = request.to
+        };
+
+        ctx.BedAssignments.Add(bedAssignment);
+        await ctx.SaveChangesAsync(cancellationToken);
+
+        var responseDto = new BedAssignmentResponse(
+            bedAssignment.Id,
+            bedAssignment.PatientPesel,
+            bedAssignment.BedId,
+            bedAssignment.From,
+            bedAssignment.To
+        );
+        
+        return responseDto;
     }
 }
